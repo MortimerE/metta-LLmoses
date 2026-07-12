@@ -133,6 +133,7 @@ $optimDeme
        ;; --- LLMOSES state-builder emit (run params pre-buffered by sbBeginRun*) ---
        ($_ (sbEmitAllMerged $updatedMetaPop))
        ($_emit (sbEmitGeneration $genIndex $metaPop $optimizedDemes))
+       ($_resp (sbAwaitResponse $genIndex))     ;; Phase II: block for watcher response to gen G, then continue
        ($_term (if (== $maxGen 1)
                    (sbEmitTerminal (+ $genIndex 1) $updatedMetaPop)
                    0))
