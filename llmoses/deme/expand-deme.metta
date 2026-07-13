@@ -141,19 +141,24 @@ $optimDeme
        ($_ulog (sbLogUtilities $genIndex))
        ($ratioOverride (py-call (state_builder.current_complexity_ratio $genIndex)))
        ($ctx2 (if (== $ratioOverride 0) $context (llmRebuildContext $context $ratioOverride)))
+       ;; Lever 3: re-sort the known population by the response's ordering
+       ;; (comparator lever on) before this generation's draws; $mp2 replaces
+       ;; $metaPop downstream (fresh name — never rebind in a let*).
+       ($cmpOn (py-call (state_builder.comparator_resort_active)))
+       ($mp2 (if (== $cmpOn 1) (llmResortMetapop $metaPop) $metaPop))
        ;; -------------------------------------------------------------------------
        ($optimizedDemes (case $ctx2
-                        ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "expand  deme returnn" (expandDeme $metaPop $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable mi)))
-                        (($nGames $opponentPolicy $complexityRatio) (trace! "expand deme return" (expandDeme $metaPop $nExpansion $nDeme $nGames $opponentPolicy $complexityRatio $maxScore $optimize))))))
+                        ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "expand  deme returnn" (expandDeme $mp2 $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable mi)))
+                        (($nGames $opponentPolicy $complexityRatio) (trace! "expand deme return" (expandDeme $mp2 $nExpansion $nDeme $nGames $opponentPolicy $complexityRatio $maxScore $optimize))))))
        ($_ (sbBeginMerge))                                   ;; <-- open merge buffer BEFORE mergeDemes
        ($updatedMetaPop (case $ctx2
-                        ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "Merging Deme" (mergeDemes $optimizedDemes $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature $itable $metaPop $nToKeep $capCoef $genCount)))
-                        (($nGames $opponentPolicy $complexityRatio) (trace! "Merging Deme" (mergeDemes $optimizedDemes $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature ($nGames $opponentPolicy) $metaPop $nToKeep $capCoef $genCount))))))
-       ($top (OS.getByIdx 0 $metaPop))
+                        ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "Merging Deme" (mergeDemes $optimizedDemes $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature $itable $mp2 $nToKeep $capCoef $genCount)))
+                        (($nGames $opponentPolicy $complexityRatio) (trace! "Merging Deme" (mergeDemes $optimizedDemes $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature ($nGames $opponentPolicy) $mp2 $nToKeep $capCoef $genCount))))))
+       ($top (OS.getByIdx 0 $mp2))
        ($topScore (getExemplarCscore $top))
        ;; --- LLMOSES state-builder emit (run params pre-buffered by sbBeginRun*) ---
        ($_ (sbEmitAllMerged $updatedMetaPop))
-       ($_emit (sbEmitGeneration $genIndex $metaPop $optimizedDemes))
+       ($_emit (sbEmitGeneration $genIndex $mp2 $optimizedDemes))
        ($_resp (sbAwaitResponse $genIndex))     ;; Phase II: block for watcher response to gen G, then continue
        ($_term (if (== $maxGen 1)
                    (sbEmitTerminal (+ $genIndex 1) $updatedMetaPop)
