@@ -109,6 +109,17 @@ $optimDeme
                  ($_x 0)))))
         (runMosesLoop $maxGen $totalGen $maxScore $maxCandOutput $metaPop $nExpansion $nDeme $context $optimize $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature $nToKeep $capCoef $genCount)))
 
+;; Phase II lever 4: rebuild the scoring context with a new complexity ratio.
+;; Boolean 4-tuple carries the ratio inside mkTruthTableBScore (field misnamed
+;; cpxCoeff upstream — it IS the ratio, getTTableParams forwards it); the
+;; strategy 3-tuple carries it directly. Unknown shapes pass through unchanged.
+(= (llmRebuildContext $ctx $newRatio)
+   (case $ctx
+     ((($pe $fs (mkTruthTableBScore $cr $size $tbl) $itable)
+        ($pe $fs (mkTruthTableBScore $newRatio $size $tbl) $itable))
+      (($nGames $opp $cr) ($nGames $opp $newRatio))
+      ($other $other))))
+
 ;; Internal loop — carries $totalGen (the original budget, never modified) so
 ;; the ascending generation index can be derived at each step.
 (= (runMosesLoop $maxGen $totalGen $maxScore $maxCandOutput $metaPop $nExpansion $nDeme $context $optimize $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature $nToKeep $capCoef $genCount)
@@ -121,11 +132,21 @@ $optimDeme
      (
        ($_ (println! (Generation $maxGen)))
        ($genIndex (+ (- $totalGen $maxGen) 1))
-       ($optimizedDemes (case $context
+       ;; --- LLMOSES Phase II: utility buffer probe + complexity-ratio lever ----
+       ;; Estimates ingested from the previous gen's response are logged here
+       ;; (proof they sit in loop memory BEFORE this gen's draws), and the
+       ;; ratio override (0 = none) rebuilds the scoring context, which then
+       ;; persists through the loop recursion. $ctx2 is a fresh name — never
+       ;; rebind an existing $var in a let* (Prolog unification collapse).
+       ($_ulog (sbLogUtilities $genIndex))
+       ($ratioOverride (py-call (state_builder.current_complexity_ratio $genIndex)))
+       ($ctx2 (if (== $ratioOverride 0) $context (llmRebuildContext $context $ratioOverride)))
+       ;; -------------------------------------------------------------------------
+       ($optimizedDemes (case $ctx2
                         ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "expand  deme returnn" (expandDeme $metaPop $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable mi)))
                         (($nGames $opponentPolicy $complexityRatio) (trace! "expand deme return" (expandDeme $metaPop $nExpansion $nDeme $nGames $opponentPolicy $complexityRatio $maxScore $optimize))))))
        ($_ (sbBeginMerge))                                   ;; <-- open merge buffer BEFORE mergeDemes
-       ($updatedMetaPop (case $context 
+       ($updatedMetaPop (case $ctx2
                         ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "Merging Deme" (mergeDemes $optimizedDemes $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature $itable $metaPop $nToKeep $capCoef $genCount)))
                         (($nGames $opponentPolicy $complexityRatio) (trace! "Merging Deme" (mergeDemes $optimizedDemes $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature ($nGames $opponentPolicy) $metaPop $nToKeep $capCoef $genCount))))))
        ($top (OS.getByIdx 0 $metaPop))
@@ -144,7 +165,7 @@ $optimDeme
       )
  (if (== $topScore $maxScore)
          $resultCandi
-         (runMosesLoop (- $maxGen 1) $totalGen $maxScore $maxCandOutput $updatedMetaPop $nExpansion $nDeme $context $optimize $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature $nToKeep $capCoef $genCount)))))
+         (runMosesLoop (- $maxGen 1) $totalGen $maxScore $maxCandOutput $updatedMetaPop $nExpansion $nDeme $ctx2 $optimize $nEval $maxCandsPerDeme $minPoolSize $complexityTemperature $nToKeep $capCoef $genCount)))))
 
 
 ;; Some helpers specific to final testing
